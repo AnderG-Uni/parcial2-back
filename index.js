@@ -14,8 +14,8 @@ app.get('/', async (req, res) => {
   res.send("Prueba que funciona");
 }); 
 
-const userRoutes = require('./routes/userRoutes');
-app.use('/api', userRoutes);
+const userRoutes = require('./routes/routers.js');
+app.use('/apiv1', userRoutes);
 
 app.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);
