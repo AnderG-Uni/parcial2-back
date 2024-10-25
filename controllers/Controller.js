@@ -3,7 +3,7 @@ const axios = require('axios');
 const CryptoJS = require("crypto-js");
 const moment = require('moment-timezone');
 
-//--------------- Login validacion de usuario ---------------------  En curso
+//--------------- Login validacion de usuario ---------------------  Terminado, por validar
 const Login = async (req, res) => {
   const datos = req.body;
   //console.log("LOGIN: ", datos);
@@ -27,14 +27,6 @@ const Login = async (req, res) => {
     res.status(500).json({ status: "Error", message: "Internal Server Error" });
   }
 };
-
-
-
-
-
-
-
-
 
 //------------- metodo  para registrar usuarios --------------------- TERMINDO, validado
 const NewUser = async (req, res) => {
@@ -163,10 +155,10 @@ function ActualizaPremio (IDCOD, IDUSER){
   }
 }
 
-//------------- metodo  para actualizar los Codigos --------------------- TERMINADO, por validar con el id_user
+//------------- metodo  para actualizar los Codigos --------------------- TERMINADO, por validar cada tipo de codigo
 const UpdateCodigo = async (req, res) => {
   const datos = req.body;
-  console.log("DATOS actualizar de codigo: ", datos);
+  console.log("DATOS enviados del front: ", datos);
 
   try{
 
@@ -185,7 +177,7 @@ const UpdateCodigo = async (req, res) => {
           //variables necesarias para actualizar el registro
           const Premio = CodigoUtilizado.premio;  // valor del premio
           const Idpremio = CodigoUtilizado._id;   // id del documento registrado ObjecID
-          const Iduser = datos.iduser;            // id del usuario ObjecID
+          const Iduser = datos.iduser.toString();       // id del usuario ObjecID
 
           //decido que hacer con cada tipo de premio
           switch (Premio) {
@@ -193,7 +185,7 @@ const UpdateCodigo = async (req, res) => {
             case "No Ganaste":
               const resultado1 = ActualizaPremio(Idpremio, Iduser);
               if(resultado1 == "Codigo registrado"){
-                res.json({ status: "No ganaste con el codigo ingresado, intenta con otros códigos. "});
+                res.json({ status: "No ganaste, el codigo ingresado no tiene premio, intenta con otros códigos. "});
               }else{ res.json({ status: "Error actualizando registro del codigo ingresado."}); }
               break;
 
@@ -271,7 +263,6 @@ const InfoTablaUser = async (req, res) => {
   const datos = req.body;
   try {
     // Buscar en la colección 'codigos' los documentos que tengan el estado  con el id del user  autenticado
-    const IDTEMP = "671af37c7fc3093fbd22a47e";
     //const DatosPremio = await pool.db('Parcial2').collection('codigos').find({estado: datos.iduser}).toArray();
     const DatosPremio = await pool.db('Parcial2').collection('codigos').find({estado: "671af37c7fc3093fbd22a47e"}).toArray();
     
@@ -290,8 +281,6 @@ const InfoTablaUser = async (req, res) => {
     res.status(500).json({ status: "Error", message: "Internal Server Error" });
   }
 };
-
-
 
 
 //---------------metodo para buscar la info del admin ---------------------
