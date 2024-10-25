@@ -8,11 +8,9 @@ const port = process.env.PORT;
 app.use(cors()); // Permitir todos los orígenes
 app.use(express.json());
 
-//connectToDatabase();
-
 app.get('/', async (req, res) => {
   res.send("Prueba que funciona");
-}); 
+});
 
 const userRoutes = require('./routes/routers.js');
 app.use('/apiv1', userRoutes);
