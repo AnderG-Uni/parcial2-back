@@ -2,6 +2,7 @@ const pool = require('../database/connect_mongo.js')
 const axios = require('axios');
 const CryptoJS = require("crypto-js");
 const moment = require('moment-timezone');
+const { ObjectId } = require('mongodb');
 
 //--------------- Login validacion de usuario ---------------------  Terminado, por validar
 const Login = async (req, res) => {
@@ -24,6 +25,26 @@ const Login = async (req, res) => {
     }
   } catch (error) {
     console.error('Error fetching user:', error);
+    res.status(500).json({ status: "Error", message: "Internal Server Error" });
+  }
+};
+
+//------- metodo buscar información de ultimos inicio de sesion --------- , TERMINADO, validado
+const InfoRegistroLogin = async (req, res) => {
+  const datos = req.body;
+  try {
+
+    const DatosLogUsers = await pool.db('Parcial2').collection('log_login').find({user: datos.user}).sort({_id:-1}).limit(1).toArray();
+    if (!Object.keys(DatosLogUsers).length == 0 ) {
+      res.json( DatosLogUsers );
+
+    }else{
+      console.log('No hay datos registrados para el usuario.');
+      res.json({ status: "No hay datos registrados para el usuario." });
+    }
+
+  } catch (error) {
+    console.error('Error al consultar la base de datos:', error);
     res.status(500).json({ status: "Error", message: "Internal Server Error" });
   }
 };
@@ -132,19 +153,50 @@ const RegistroCodigo = async (req, res) => {
   }
 };
 
+//------------- metodo  para registrar la auditoria de los codigos --------------------- TERMINDO, validado
+async function RegistroIntentosCodigo (IDUSER, CODIGO, PREMIO, FECHA, res, req){
+  try{
+
+    //Busco la información en user info con el IDCOD  que pertenece al usuario
+    var ID_USER = new ObjectId(IDUSER);
+    const DatosUsuario = await pool.db('Parcial2').collection('user_info').findOne({user_id: ID_USER });
+    if (DatosUsuario) {
+
+      try {
+
+        const RegistroIntentos = await pool.db('Parcial2').collection('intentos').insertOne({nombre: DatosUsuario.nombre,  cedula: DatosUsuario.cedula, telefono: DatosUsuario.celular, codigo: CODIGO, premio: PREMIO, fecha: FECHA });
+        if (RegistroIntentos.acknowledged) {
+          console.log("status: Registro de auditoria del codigo exitoso.");
+          return "Auditoria registrada exitosamente";
+        } else {
+          console.log("status: Error creando el registro de auditoria");
+          return "error Auditoria no registrada";
+        }
+        
+      } catch (error) {
+        console.error('Error registrando información de auditoria del codigo: ', error);
+      }
+      return  "Intento de validacion de premio registrado";
+    } else {
+      console.log("Error actualicanzo registro del codigo al usuario.");
+      return "Error actualicanzo registro del codigo.";
+    }
+
+  } catch (error) {
+    console.error('Error buscando información del usuario:', error);
+    res.status(500).json({ status: "Error", message: "ha ocurrido un error con la base de datos." });
+  }
+}
+
 //------------- metodo  para actualizar los premios --------------------- TERMINADO, Validado
-function ActualizaPremio (IDCOD, IDUSER){
+function ActualizaPremio (IDCOD, IDUSER, FECHA){
   try{
     //Actualizo el codigo utilizado con los datos de fecha
-    console.log("id del document codigo: ", IDCOD);
-    const FechaActual = moment().tz('America/Bogota').format('YYYY-MM-DD HH:mm:ss');
-    const registroCodigo =  pool.db('Parcial2').collection('codigos').updateOne({ _id: IDCOD}, { $set: {estado: IDUSER, fecha: FechaActual} } );
+    const registroCodigo =  pool.db('Parcial2').collection('codigos').updateOne({ _id: IDCOD}, { $set: {estado: IDUSER, fecha: FECHA} } );
     if (registroCodigo) {
-      //res.json({ status: "Codigo registrado."});
       console.log("Codigo registrado al usuario.");
       return  "Codigo registrado";
     } else {
-      //res.json({ status: "Error actualicanzo registro del codigo." });
       console.log("Error actualicanzo registro del codigo al usuario.");
       return "Error actualicanzo registro del codigo.";
     }
@@ -155,58 +207,86 @@ function ActualizaPremio (IDCOD, IDUSER){
   }
 }
 
-//------------- metodo  para actualizar los Codigos --------------------- TERMINADO, por validar cada tipo de codigo
+//------------- metodo  para actualizar los Codigos ------------------- TERMINADO, validado
 const UpdateCodigo = async (req, res) => {
   const datos = req.body;
-  console.log("DATOS enviados del front: ", datos);
+  //console.log("DATOS enviados del front: ", datos);
 
   try{
-
     //consulto los datos del codigo que el user trata de registrar para ganar
-    //const COD_PREMIO = datos.codigo;
     const CodigoUtilizado = await pool.db('Parcial2').collection('codigos').findOne({codigo: datos.codigo});
-    console.log("status: datos encontrados: ", CodigoUtilizado)
 
     if (CodigoUtilizado) {
-      //res.json({ status: "Codigo encontrado."});
-      //console.log("status: Codigo encontrado: ", CodigoUtilizado.codigo)
-
         //valido si el estado del premio esta LIBRE
         if(CodigoUtilizado.estado == "Libre"){
 
           //variables necesarias para actualizar el registro
           const Premio = CodigoUtilizado.premio;  // valor del premio
           const Idpremio = CodigoUtilizado._id;   // id del documento registrado ObjecID
-          const Iduser = datos.iduser.toString();       // id del usuario ObjecID
+          const Iduser = datos.iduser.toString();       // id del usuario en cadena
+          const CodigoPremio = CodigoUtilizado.codigo;  // codigo con el premio 001 - 002 - 003
+          const FechaActual = moment().tz('America/Bogota').format('YYYY-MM-DD HH:mm:ss');
 
           //decido que hacer con cada tipo de premio
           switch (Premio) {
             
             case "No Ganaste":
-              const resultado1 = ActualizaPremio(Idpremio, Iduser);
+              const resultado1 = ActualizaPremio(Idpremio, Iduser, FechaActual);
               if(resultado1 == "Codigo registrado"){
-                res.json({ status: "No ganaste, el codigo ingresado no tiene premio, intenta con otros códigos. "});
+                
+                //registro el intento de validación del codigo
+                const resultado3 = RegistroIntentosCodigo(Iduser, CodigoPremio,  Premio, FechaActual);
+                if(resultado3 == "Auditoria registrada exitosamente"){
+                  res.json({ status: "Error creando el registro de auditoria"});
+                }else{
+                  res.json({ status: " Con el código ingresado NO GANASTE ningún premio. "});
+                }
+
               }else{ res.json({ status: "Error actualizando registro del codigo ingresado."}); }
               break;
 
             case "Ganaste 1.000.000":
-              const resultado2 = ActualizaPremio(Idpremio, Iduser);
+              const resultado2 = ActualizaPremio(Idpremio, Iduser, FechaActual);
               if(resultado2 == "Codigo registrado"){
-                res.json({ status: "Felicidades! has ganado 1.000.000 de pesos. "});
+
+                  //registro el intento de validación del codigo
+                  const resultado3 = RegistroIntentosCodigo(Iduser, CodigoPremio,  Premio, FechaActual);
+                  if(resultado3 == "Auditoria registrada exitosamente"){
+                    res.json({ status: "Error creando el registro de auditoria"});
+                  }else{
+                    res.json({ status: "Felicidades! HAS GANADO 1.000.000 de pesos."});
+                  }
+
               }else{ res.json({ status: "Error actualizando registro del codigo ingresado."}); }
               break;
             
             case "Ganaste 10.000":
               const resultado3 = ActualizaPremio(Idpremio, Iduser);
               if(resultado3 == "Codigo registrado"){
-                res.json({ status: "exitoso! "});
+
+                  //registro el intento de validación del codigo
+                  const resultado3 = RegistroIntentosCodigo(Iduser, CodigoPremio,  Premio, FechaActual);
+                  if(resultado3 == "Auditoria registrada exitosamente"){
+                    res.json({ status: "Error creando el registro de auditoria"});
+                  }else{
+                    res.json({ status: "Felicidades! HAS GANADO 10.000 mil pesos."});
+                  }
+
               }else{ res.json({ status: "Error actualizando registro del codigo ingresado."}); }
               break;
             
             case "Ganaste 50.000":
               const resultado4 = ActualizaPremio(Idpremio, Iduser);
               if(resultado4 == "Codigo registrado"){
-                res.json({ status: "exitoso! "});
+
+                  //registro el intento de validación del codigo
+                  const resultado3 = RegistroIntentosCodigo(Iduser, CodigoPremio,  Premio, FechaActual);
+                  if(resultado3 == "Auditoria registrada exitosamente"){
+                    res.json({ status: "Error creando el registro de auditoria"});
+                  }else{
+                    res.json({ status: "Felicidades! HAS GANADO 50.000 mil pesos."});
+                  }
+                  
               }else{ res.json({ status: "Error actualizando registro del codigo ingresado."}); }
               break;
           
@@ -232,21 +312,15 @@ const UpdateCodigo = async (req, res) => {
   }
 };
 
-
 //---------------metodo para buscar la info del usuario--------------------- TERMINADO, verificar
 const InfoUser = async (req, res) => {
   const datos = req.body;
   try {
+
     // Buscar en la colección 'codigos' los documentos que tengan el estado  con el id del user  autenticado
-    const usertemp = "jhmithert@gmail.com";
-    //const DatosPremio = await pool.db('Parcial2').collection('users').find({estado: datos.user}).toArray();
-    const DatosUser = await pool.db('Parcial2').collection('users').find({user: usertemp}).toArray();
-    
+    const DatosUser = await pool.db('Parcial2').collection('users').find({user: datos.user}).toArray();
     if (!Object.keys(DatosUser).length == 0 ) {
-
-      console.log('Información del usuario: ', DatosUser);
       res.json( DatosUser );
-
     }else{
       console.log('No hay datos registrados para el usuario.');
       res.json({ status: "No hay datos registrados para el usuario." });
@@ -258,22 +332,17 @@ const InfoUser = async (req, res) => {
   }
 };
 
-
+//------ metodo para buscar la info de la tabla de codigos user -------------- TERMINADO, verificar
 const InfoTablaUser = async (req, res) => {
   const datos = req.body;
   try {
     // Buscar en la colección 'codigos' los documentos que tengan el estado  con el id del user  autenticado
-    //const DatosPremio = await pool.db('Parcial2').collection('codigos').find({estado: datos.iduser}).toArray();
-    const DatosPremio = await pool.db('Parcial2').collection('codigos').find({estado: "671af37c7fc3093fbd22a47e"}).toArray();
+    const DatosPremio = await pool.db('Parcial2').collection('codigos').find({estado: datos.iduser}).toArray();
     
     if (!Object.keys(DatosPremio).length == 0 ) {
-
-      console.log('Codigos registrados para el usuario: ', DatosPremio);
       res.json( DatosPremio );
-
     }else{
-      console.log('No hay codigos registrados para el usuario.');
-      res.json({ status: "No hay codigos registrados para el usuario." });
+      res.json([{ status: "No hay codigos registrados para el usuario", _id: "", codigo: "", premio: "", estado: "", fecha: "" }] );
     }
 
   } catch (error) {
@@ -282,23 +351,70 @@ const InfoTablaUser = async (req, res) => {
   }
 };
 
-
-//---------------metodo para buscar la info del admin ---------------------
-// trer fecha, nombre, cedula, telefono, codigo, premio
-const InfoAdmin = async (req, res) => {
-  const datos = req.body;
+//---------------metodo para buscar la info del admin --------------------- en curso
+const InfoTablaAdmin1 = async (req, res) => {
   try {
     // Buscar en la colección 'codigos' los documentos que tengan el estado  con el id del user  autenticado
-    const DatosPremio = await pool.db('Parcial2').collection('codigos').find({estado: datos.iduser}).toArray();
+    const DatosPremio = await pool.db('Parcial2').collection('intentos').find({premio: "Ganaste 1.000.000"}).toArray();
     
     if (!Object.keys(DatosPremio).length == 0 ) {
-
-      console.log('Codigos registrados para el usuario: ', DatosPremio);
-      res.json({ DatosPremio });
-
+      res.json( DatosPremio );
     }else{
-      console.log('No hay codigos registrados para el usuario.');
-      res.json({ status: "No hay codigos registrados para el usuario." });
+      res.json([{ status: "No hay registros de codigos validados.", _id: "", nombre: "", cedula: "", telefono: "", codigo: "", premio: "", fecha: ""  }]);
+    }
+
+  } catch (error) {
+    console.error('Error al consultar la base de datos:', error);
+    res.status(500).json({ status: "Error", message: "Internal Server Error" });
+  }
+};
+
+//---------------metodo para buscar la info del admin --------------------- en curso
+const InfoTablaAdmin2 = async (req, res) => {
+  try {
+    // Buscar en la colección 'codigos' los documentos que tengan el estado  con el id del user  autenticado
+    const DatosPremio = await pool.db('Parcial2').collection('intentos').find({premio: "Ganaste 50.000"}).toArray();
+    
+    if (!Object.keys(DatosPremio).length == 0 ) {
+      res.json( DatosPremio );
+    }else{
+      res.json([{ status: "No hay registros de codigos validados.", _id: "", nombre: "", cedula: "", telefono: "", codigo: "", premio: "", fecha: ""  }]);
+    }
+
+  } catch (error) {
+    console.error('Error al consultar la base de datos:', error);
+    res.status(500).json({ status: "Error", message: "Internal Server Error" });
+  }
+};
+
+//---------------metodo para buscar la info del admin --------------------- en curso
+const InfoTablaAdmin3 = async (req, res) => {
+  try {
+    // Buscar en la colección 'codigos' los documentos que tengan el estado  con el id del user  autenticado
+    const DatosPremio = await pool.db('Parcial2').collection('intentos').find({premio: "Ganaste 10.000"}).toArray();
+    
+    if (!Object.keys(DatosPremio).length == 0 ) {
+      res.json( DatosPremio );
+    }else{
+      res.json([{ status: "No hay registros de codigos validados.", _id: "", nombre: "", cedula: "", telefono: "", codigo: "", premio: "", fecha: ""  }]);
+    }
+
+  } catch (error) {
+    console.error('Error al consultar la base de datos:', error);
+    res.status(500).json({ status: "Error", message: "Internal Server Error" });
+  }
+};
+
+//---------------metodo para buscar la info del admin --------------------- en curso
+const InfoTablaAdmin4 = async (req, res) => {
+  try {
+    // Buscar en la colección 'codigos' los documentos que tengan el estado  con el id del user  autenticado
+    const DatosPremio = await pool.db('Parcial2').collection('intentos').find({premio: "No Ganaste"}).toArray();
+    
+    if (!Object.keys(DatosPremio).length == 0 ) {
+      res.json( DatosPremio );
+    }else{
+      res.json([{ status: "No hay registros de codigos validados.", _id: "", nombre: "", cedula: "", telefono: "", codigo: "", premio: "", fecha: ""  }]);
     }
 
   } catch (error) {
@@ -315,5 +431,10 @@ module.exports = {
     UpdateCodigo,
     InfoUser,
     InfoTablaUser,
-    InfoAdmin
+    InfoTablaAdmin1,
+    InfoTablaAdmin2,
+    InfoTablaAdmin3,
+    InfoTablaAdmin4,
+    InfoRegistroLogin,
+    RegistroIntentosCodigo
   };
