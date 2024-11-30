@@ -5,13 +5,17 @@ require('dotenv').config();
 const app = express();
 const port = process.env.PORT;
 
-app.use(cors()); // Permitir todos los orígenes
+// Permitir todos los orígenes
+app.use(cors());
 app.use(express.json());
 
+//Ruta raiz
 app.get('/', async (req, res) => {
   res.send("Prueba que funciona");
 });
 
+
+//configuración de rutas
 const userRoutes = require('./routes/routers.js');
 app.use('/apiv1', userRoutes);
 

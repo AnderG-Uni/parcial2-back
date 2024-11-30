@@ -1,10 +1,18 @@
 const express = require('express');
 const router = express.Router();
 const userController = require('../controllers/Controller.js');
+const {getVideoUrl, upload } = require('../controllers/Controller.js'); //funciones de videos
+
 
 router.post('/login', userController.Login); // Valido los intentos de login
 router.post('/new_user', userController.NewUser); // creo los registros de los nuevos usuarios
 router.post('/new_admin', userController.NewAdmin); // creo los registros de los nuevos admin
+router.post('/UploadVideo', upload.single('video'), userController.UploadVideo,); // Guardo los videos
+router.post('/GetUserVideo', userController.GetUserVideo); // Obtengo los videos de un usuario
+router.get('/GetAllVideo', userController.GetAllVideos); // Obtengo los videos de un usuario
+router.post('/GetVideo', userController.GetVideo); // Obtengo los videos de un usuario
+
+// :::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
 router.post('/Registro_codigo', userController.RegistroCodigo); // creo los registros de los datos de codigo
 router.post('/update_codigo', userController.UpdateCodigo); // creo los registros de los datos de codigo
 router.post('/info_user', userController.InfoUser); // obtener los datos de la vista user

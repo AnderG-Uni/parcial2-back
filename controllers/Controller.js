@@ -1,8 +1,32 @@
 const pool = require('../database/connect_mongo.js')
 const axios = require('axios');
+const multer = require('multer');
+const AWS = require('aws-sdk');
+const mime = require('mime-types');
 const CryptoJS = require("crypto-js");
 const moment = require('moment-timezone');
 const { ObjectId } = require('mongodb');
+
+// Configuración de S3
+const s3 = new AWS.S3({
+  accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+  secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
+  region: process.env.AWS_REGION,
+});
+
+// Configuración de multer - reproducir videos
+const upload = multer({
+  limits: { fileSize: 100 * 1024 * 1024 }, // Límite de 100MB
+  fileFilter: (req, file, cb) => {
+    const mimeType = mime.lookup(file.originalname);
+    if (mimeType && mimeType.startsWith('video/')) {
+      cb(null, true);
+    } else {      
+      cb(new Error('Cuidado! Solo se permiten archivos de video'));
+    }
+  },
+});
+
 
 //--------------- Login validacion de usuario ---------------------  Terminado, por validar
 const Login = async (req, res) => {
@@ -109,6 +133,99 @@ const NewUser = async (req, res) => {
   }
 };
 
+
+// ------------ metodo guardar archivos
+
+// Ruta para subir video
+const UploadVideo = async (req, res) => {
+  const file = req.file;
+  const { nombrevideo, user, iduser } = req.body;
+  console.log("Archivo que llego: ", file, nombrevideo, iduser);
+
+  if (!file) return res.status(400).json({ message: 'No se subió ningún archivo.' });
+  if (!nombrevideo || !user || !iduser) {
+    return res.status(400).json({ message: 'Faltan el nombre del video' });
+  }
+
+  const uploadParams = {
+    Bucket: process.env.AWS_BUCKET_NAME,
+    Key: `videos/${Date.now()}-${file.originalname}`,
+    Body: file.buffer,
+    ContentType: file.mimetype,
+  };
+
+  try {
+    const s3Result = await s3.upload(uploadParams).promise();
+    const videoURL = s3Result.Location;
+
+    // Guardar la URL en MongoDB
+    const userObjectId = new ObjectId(iduser);
+    const result = await pool.db('Parcial2').collection('videos').insertOne({ NombreVideo: nombrevideo, Url: videoURL, user: user, iduser: userObjectId });
+    return res.status(201).json({ message: 'Video subido correctamente' });
+  } catch (error) {
+    res.status(500).json({ message: 'Error subiendo el video', error });
+  }
+};
+
+// Función para obtener la URL de todos los videos desde MongoDB
+const GetAllVideos = async (req, res) => {
+  try {
+    const video = await pool.db('Parcial2').collection('videos').find().toArray();
+    if (!video) return res.status(404).json({ message: 'No se encontraron videos en la plataforma' });
+    res.status(200).json(video);
+    console.log ("Todos los videos encontrados: ", video);
+  } catch (error) {
+    res.status(500).json({ message: 'Error obteniendo los videos.', error });
+  }
+};
+
+// Función para obtener la URL del video de un usuario desde MongoDB
+const GetUserVideo = async (req, res) => {
+  const User  = req.body;
+  console.log("info id:", User.user);
+  try {
+    const videouser = await pool.db('Parcial2').collection('videos').find({user: User.user}).toArray();
+    if (!videouser.length){
+      //console.log ("DATOS del video seleccionado1: ", videouser);
+      return res.status(200).json({ message: 'El usuario no tiene videos' });
+       
+    }else{
+      console.log ("Datos de los videos encontrados para el usuario: ", videouser);
+      return res.status(200).json(videouser);
+    }
+  } catch (error) {
+    res.status(500).json({ message: 'Error obteniendo los videos.', error });
+  }
+};
+
+// Función para obtener la URL de todos los videos desde MongoDB
+const GetVideo = async (req, res) => {
+  const idvideo  =  req.body;
+  console.log ("El id del video a reproducir es: ", idvideo.id);
+  const IDVIDEO = new ObjectId(idvideo.id);
+
+  try {
+    const videoR = await pool.db('Parcial2').collection('videos').find({_id: IDVIDEO}).toArray();
+    console.log ("DATOS DEL VIDEO]: ", videoR);
+    if (!videoR.length) {
+      console.log ("No hay datos del video: ", videoR);
+      return res.status(404).json({ message: 'No se encontraron videos en la plataforma' });
+    }else{
+      console.log ("DATOS del video seleccionado: ", videoR);
+      return res.status(200).json(videoR);
+    }
+  } catch (error) {
+    res.status(500).json({ message: 'Error obteniendo los videos.', error });
+  }
+};
+
+
+
+//  ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+//  ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::v
+//  ::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::::
+
+
 //------------- metodo  para registrar administradores --------------------- TERMINDO, Validado
 const NewAdmin = async (req, res) => {
 
@@ -139,14 +256,51 @@ const RegistroCodigo = async (req, res) => {
   console.log("DATOS enviados de codigo: ", datos);
   // codigo, premio, estado, fecha
   try{
-    const registroCodigo =  await pool.db('Parcial2').collection('codigos').insertOne({codigo: datos.codigo, premio: datos.premio, estado: datos.estado, fecha: datos.fecha});
+
+    // Códigos generados
+    const codes = new Set();  // Usamos Set para evitar duplicados
+
+
+        // Generar 50 códigos de 1.000.000
+        while (codes.size < 50) {
+          const code = String(Math.floor(Math.random() * 1000)).padStart(3, '0');
+          codes.add({ codigo: code, premio: 'Ganaste 1.000.000', estado: "Libre", fecha: "" });
+        }
+
+      //Generar 150 códigos de 50.000
+       while (codes.size < 200) {  // 50 + 150 = 200
+        const code = String(Math.floor(Math.random() * 1000)).padStart(3, '0');
+        codes.add({ codigo: code, premio: 'Ganaste 50.000', estado: "Libre", fecha: "" });
+      }
+
+      // Generar 200 códigos de 10.000
+    while (codes.size < 400) {  // 50 + 150 + 200 = 400
+      const code = String(Math.floor(Math.random() * 1000)).padStart(3, '0');
+      codes.add({ codigo: code, premio: 'Ganaste 10.000', estado: "Libre", fecha: ""  });
+    }
+
+        // Generar los códigos restantes como "No ganaste"
+        for (let i = 0; i < 1000; i++) {
+          const code = String(i).padStart(3, '0'); // Genera códigos del 000 al 999
+          if (!Array.from(codes).find(c => c.code === code)) {
+            codes.add({ codigo: code, premio: 'No Ganaste', estado: "Libre", fecha: ""   });
+          }
+        }
+
+    // Insertar los códigos en la base de datos
+    await pool.db('Parcial2').collection('codigos').insertMany(Array.from(codes));  // Convertir el Set en un array para MongoDB
+    console.log('Códigos generados e insertados en la base de datos');
+
+
+    /*const registroCodigo =  await pool.db('Parcial2').collection('codigos').insertOne({codigo: datos.codigo, premio: datos.premio, estado: datos.estado, fecha: datos.fecha});
     if (registroCodigo.acknowledged) {
       res.json({ status: "Codigo registrado exitosamente."});
       console.log("status: Registro del codigo  exitoso.")
     } else {
       res.json({ status: "ErrorCreandoRegistro" });
       console.log("status: ErrorCreandoRegistro")
-    }
+    }*/
+
   } catch (error) {
     console.error('Error fetching user:', error);
     res.status(500).json({ status: "Error", message: "Internal Server Error" });
@@ -423,10 +577,17 @@ const InfoTablaAdmin4 = async (req, res) => {
   }
 };
 
+
+
 module.exports = {
     Login,
     NewUser,
     NewAdmin,
+    upload,
+    UploadVideo,
+    GetUserVideo,
+    GetVideo,
+    GetAllVideos,
     RegistroCodigo,
     UpdateCodigo,
     InfoUser,
