@@ -139,8 +139,9 @@ const NewUser = async (req, res) => {
 // Ruta para subir video
 const UploadVideo = async (req, res) => {
   const file = req.file;
+  const FechaActual = moment().tz('America/Bogota').format('YYYY-MM-DD');
   const { nombrevideo, user, iduser } = req.body;
-  console.log("Archivo que llego: ", file, nombrevideo, iduser);
+  console.log("Archivo que llego: ", file, nombrevideo, iduser, FechaActual);
 
   if (!file) return res.status(400).json({ message: 'No se subió ningún archivo.' });
   if (!nombrevideo || !user || !iduser) {
@@ -160,7 +161,7 @@ const UploadVideo = async (req, res) => {
 
     // Guardar la URL en MongoDB
     const userObjectId = new ObjectId(iduser);
-    const result = await pool.db('Parcial2').collection('videos').insertOne({ NombreVideo: nombrevideo, Url: videoURL, user: user, iduser: userObjectId });
+    const result = await pool.db('Parcial2').collection('videos').insertOne({ NombreVideo: nombrevideo, Url: videoURL, user: user, iduser: userObjectId, Fecha: FechaActual });
     return res.status(201).json({ message: 'Video subido correctamente' });
   } catch (error) {
     res.status(500).json({ message: 'Error subiendo el video', error });
